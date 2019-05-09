@@ -8,7 +8,7 @@ import (
 	"github.com/agile-work/srv-shared/amqp"
 )
 
-//Job represents an running instance of the job definition
+// Job represents an running instance of the job definition
 type Job struct {
 	ID          string    `json:"id" sql:"id"`
 	ServiceID   string    `json:"service_id" sql:"service_id"`
@@ -61,7 +61,7 @@ func (j *Job) work() {
 	}
 }
 
-//Process keep checkin channel to process job messages
+// Process keep checkin channel to process job messages
 func (j *Job) Process(jobs <-chan *amqp.Message) {
 	fmt.Println("Start JOB Process")
 	for i := 0; i < j.Concurrency; i++ {

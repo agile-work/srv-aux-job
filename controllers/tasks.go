@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-//Task represents an task instance that need to be executed in the Job instance
+// Task represents an task instance that need to be executed in the Job instance
 type Task struct {
 	ID               string    `json:"id"`
 	Code             string    `json:"code"`
@@ -30,7 +30,7 @@ type Task struct {
 	retryAttempts    int
 }
 
-//Run executes the task
+// Run executes the task
 func (t *Task) Run(responses chan<- *Task) {
 	t.Status = statusProcessing
 	fmt.Printf("    Task: %s | Status: %s\n", t.ID, t.Status)
@@ -42,7 +42,7 @@ func (t *Task) Run(responses chan<- *Task) {
 	responses <- t
 }
 
-//LoadParams fetch task params from the database
+// LoadParams fetch task params from the database
 func (t *Task) LoadParams() {
 	//TODO: Load task params from the DB
 }

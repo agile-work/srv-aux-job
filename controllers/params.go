@@ -1,6 +1,6 @@
 package controllers
 
-//Param represents an task param key value
+// Param represents an task param key value
 type Param struct {
 	ID        string `json:"id" sql:"id"`
 	Type      string `json:"param_type" sql:"param_type"`
