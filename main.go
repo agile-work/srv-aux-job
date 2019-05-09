@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	jobConcurrencyWorkers  = flag.Int("job-workers", 3, "Number of job processing concurrency")
-	taskConcurrencyWorkers = flag.Int("taks-workers", 3, "Number of tasks processing concurrency")
+	jobConcurrencyWorkers  = flag.Int("jobs", 3, "Number of job processing concurrency")
+	taskConcurrencyWorkers = flag.Int("taks", 3, "Number of tasks processing concurrency")
 	host                   = "cryo.cdnm8viilrat.us-east-2.rds-preview.amazonaws.com"
 	port                   = 5432
 	user                   = "cryoadmin"
@@ -44,12 +44,14 @@ func main() {
 			ServiceID:   serviceID,
 			Instance:    w,
 			Concurrency: *taskConcurrencyWorkers,
-			Execution:   make(chan *controllers.Task),
-			Responses:   make(chan *controllers.Task),
+			Execution:   make(chan *controllers.Task, 100),
+			Responses:   make(chan *controllers.Task, 100),
 		}
 		pool = append(pool, job)
 		go job.Process(jobMessages)
 	}
+
+	fmt.Println("")
 
 	jobsQueue, _ := amqp.New("amqp://guest:guest@localhost:5672/", "jobs", false)
 

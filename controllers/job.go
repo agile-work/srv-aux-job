@@ -36,17 +36,7 @@ func (j *Job) run() {
 	//TODO: Read Tasks params from database
 
 	j.WG.Add(len(j.Tasks))
-
 	j.defineTasksToExecute("", "", 0)
-	go func() {
-		for tsk := range j.Responses {
-			fmt.Printf("    Task: %s | Status: %s\n", tsk.ID, tsk.Status)
-			//TODO: check task status to deal with errors
-			j.WG.Done()
-			j.defineTasksToExecute(tsk.ID, tsk.ParentID, tsk.Sequence)
-		}
-	}()
-
 	j.WG.Wait()
 
 	j.Finish = time.Now()
@@ -55,18 +45,34 @@ func (j *Job) run() {
 }
 
 func (j *Job) work() {
-	fmt.Printf("JOB %d - Start Task Process \n", j.Instance)
 	for tsk := range j.Execution {
 		tsk.Run(j.Responses)
 	}
 }
 
+func (j *Job) response() {
+	for tsk := range j.Responses {
+		fmt.Printf("    Task: %s | Status: %s\n", tsk.ID, tsk.Status)
+		j.WG.Done()
+		j.defineTasksToExecute(tsk.ID, tsk.ParentID, tsk.Sequence)
+	}
+}
+
 // Process keep checkin channel to process job messages
 func (j *Job) Process(jobs <-chan *amqp.Message) {
-	fmt.Println("Start JOB Process")
+	fmt.Printf("JOB worker %d started\n", j.Instance)
 	for i := 0; i < j.Concurrency; i++ {
+		fmt.Printf("   Task worker %03d started \n", i+1)
 		go j.work()
 	}
+
+	fmt.Printf("   Response orquestration started\n\n")
+	go func() {
+		for tsk := range j.Responses {
+			j.WG.Done()
+			j.defineTasksToExecute(tsk.ID, tsk.ParentID, tsk.Sequence)
+		}
+	}()
 
 	for msg := range jobs {
 		fmt.Println("Get message from jobs channel")
@@ -92,6 +98,7 @@ func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
 	for i, t := range j.Tasks {
 		if t.ParentID == parentID && t.Sequence == sequence && t.Status == statusCreated {
 			fmt.Printf("Push to channel execution -> Task %s\n", t.ID)
+			j.Tasks[i].Status = statusProcessing
 			j.Execution <- &j.Tasks[i]
 		}
 	}
@@ -101,6 +108,7 @@ func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
 		for i, t := range j.Tasks {
 			if t.ParentID == id && t.Sequence == 0 && t.Status == statusCreated {
 				fmt.Printf("Push to channel execution -> Task %s\n", t.ID)
+				j.Tasks[i].Status = statusProcessing
 				j.Execution <- &j.Tasks[i]
 			}
 		}
@@ -108,11 +116,87 @@ func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
 
 }
 
-func (j *Job) end() {
-	close(j.Responses)
+func mockTasks(tasks *[]Task) {
+	t := Task{
+		Status:      statusCreated,
+		Sequence:    0,
+		ID:          "AAA",
+		ExecTimeout: 5,
+	}
+	*tasks = append(*tasks, t)
+	t = Task{
+		Status:      statusCreated,
+		Sequence:    0,
+		ID:          "BBB",
+		ExecTimeout: 4,
+	}
+	*tasks = append(*tasks, t)
+	t = Task{
+		Status:      statusCreated,
+		Sequence:    0,
+		ID:          "BB1",
+		ExecTimeout: 6,
+	}
+	*tasks = append(*tasks, t)
+	t = Task{
+		Status:      statusCreated,
+		Sequence:    0,
+		ID:          "BB2",
+		ExecTimeout: 2,
+	}
+	*tasks = append(*tasks, t)
+	t = Task{
+		Status:      statusCreated,
+		Sequence:    0,
+		ID:          "BB3",
+		ExecTimeout: 10,
+	}
+	*tasks = append(*tasks, t)
+	t = Task{
+		Status:      statusCreated,
+		Sequence:    0,
+		ID:          "B31",
+		ExecTimeout: 1,
+	}
+	*tasks = append(*tasks, t)
+	t = Task{
+		Status:      statusCreated,
+		Sequence:    0,
+		ID:          "B32",
+		ExecTimeout: 1,
+	}
+	*tasks = append(*tasks, t)
+	t = Task{
+		Status:      statusCreated,
+		Sequence:    0,
+		ID:          "CCC",
+		ExecTimeout: 1,
+	}
+	*tasks = append(*tasks, t)
+	t = Task{
+		Status:      statusCreated,
+		Sequence:    0,
+		ID:          "DDD",
+		ExecTimeout: 2,
+	}
+	*tasks = append(*tasks, t)
+	t = Task{
+		Status:      statusCreated,
+		Sequence:    0,
+		ID:          "DD1",
+		ExecTimeout: 5,
+	}
+	*tasks = append(*tasks, t)
+	t = Task{
+		Status:      statusCreated,
+		Sequence:    0,
+		ID:          "DD2",
+		ExecTimeout: 2,
+	}
+	*tasks = append(*tasks, t)
 }
 
-func mockTasks(tasks *[]Task) {
+func mockTasksParents(tasks *[]Task) {
 	t := Task{
 		Status:      statusCreated,
 		Sequence:    0,
@@ -132,7 +216,7 @@ func mockTasks(tasks *[]Task) {
 		Sequence:    0,
 		ID:          "BB1",
 		ParentID:    "BBB",
-		ExecTimeout: 3,
+		ExecTimeout: 1,
 	}
 	*tasks = append(*tasks, t)
 	t = Task{
@@ -171,7 +255,7 @@ func mockTasks(tasks *[]Task) {
 		Status:      statusCreated,
 		Sequence:    1,
 		ID:          "CCC",
-		ExecTimeout: 5,
+		ExecTimeout: 1,
 	}
 	*tasks = append(*tasks, t)
 	t = Task{

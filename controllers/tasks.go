@@ -32,7 +32,6 @@ type Task struct {
 
 // Run executes the task
 func (t *Task) Run(responses chan<- *Task) {
-	t.Status = statusProcessing
 	fmt.Printf("    Task: %s | Status: %s\n", t.ID, t.Status)
 	t.StartAt = time.Now()
 	//TODO: update task on the DB
@@ -40,6 +39,7 @@ func (t *Task) Run(responses chan<- *Task) {
 	t.Status = statusCompleted
 	t.FinishAt = time.Now()
 	responses <- t
+	fmt.Printf("    Task: %s | Status: %s\n", t.ID, t.Status)
 }
 
 // LoadParams fetch task params from the database
