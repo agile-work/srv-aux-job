@@ -68,7 +68,10 @@ func main() {
 		ID:    "000001",
 		Queue: "jobs",
 	}
-	jobsQueue.Push(m)
+	err = jobsQueue.Push(m)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
 
 	<-stopChan
 	fmt.Println("Shutting down Service...")

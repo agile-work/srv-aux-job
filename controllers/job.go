@@ -24,7 +24,6 @@ type Job struct {
 }
 
 func (j *Job) run() {
-	fmt.Printf("JOB: %s | Instance: %00d | processing > JOB Instance ID: %s\n", j.ServiceID, j.Instance, j.ID)
 	//TODO: Check and wait until JOB Instance is in created status
 	j.Start = time.Now()
 	j.Status = statusProcessing
@@ -32,8 +31,9 @@ func (j *Job) run() {
 	//TODO: Read tasks from database
 	mockTasks(&j.Tasks)
 
-	fmt.Printf("Total tasks %d\n", len(j.Tasks))
-	//TODO: Read Tasks params from database
+	fmt.Printf("JOB: %s | Worker: %02d | JOB Instance ID: %s | Total tasks: %d\n", j.ServiceID, j.Instance, j.ID, len(j.Tasks))
+
+	//TODO: Get Tasks params
 
 	j.WG.Add(len(j.Tasks))
 	j.defineTasksToExecute("", "", 0)
@@ -41,7 +41,7 @@ func (j *Job) run() {
 
 	j.Finish = time.Now()
 	duration := time.Since(j.Start)
-	fmt.Printf("JOB: %s | Instance: %00d | Completed in %fs\n", j.ServiceID, j.Instance, duration.Seconds())
+	fmt.Printf("JOB: %s | Worker: %02d | Completed in %fs\n", j.ServiceID, j.Instance, duration.Seconds())
 }
 
 func (j *Job) work() {
@@ -60,13 +60,11 @@ func (j *Job) response() {
 
 // Process keep checkin channel to process job messages
 func (j *Job) Process(jobs <-chan *amqp.Message) {
-	fmt.Printf("JOB worker %d started\n", j.Instance)
+
 	for i := 0; i < j.Concurrency; i++ {
-		fmt.Printf("   Task worker %03d started \n", i+1)
 		go j.work()
 	}
 
-	fmt.Printf("   Response orquestration started\n\n")
 	go func() {
 		for tsk := range j.Responses {
 			j.WG.Done()
@@ -74,8 +72,8 @@ func (j *Job) Process(jobs <-chan *amqp.Message) {
 		}
 	}()
 
+	fmt.Printf("Worker %02d started [Tasks: %02d]\n", j.Instance, j.Concurrency)
 	for msg := range jobs {
-		fmt.Println("Get message from jobs channel")
 		j.ID = msg.ID
 		j.run()
 	}
