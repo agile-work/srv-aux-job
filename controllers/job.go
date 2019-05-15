@@ -2,50 +2,61 @@ package controllers
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
+	shared "github.com/agile-work/srv-shared"
 	"github.com/agile-work/srv-shared/amqp"
+	"github.com/agile-work/srv-shared/sql-builder/builder"
+	"github.com/agile-work/srv-shared/sql-builder/db"
 )
 
 // Job represents an running instance of the job definition
 type Job struct {
-	ID          string    `json:"id" sql:"id"`
-	ServiceID   string    `json:"service_id" sql:"service_id"`
-	Status      string    `json:"status" sql:"status"`
-	Start       time.Time `json:"start_at" sql:"start_at"`
-	Finish      time.Time `json:"finish_at" sql:"finish_at"`
-	Tasks       []Task    `json:"tasks"`
-	Execution   chan *Task
-	Responses   chan *Task
-	Instance    int
-	Concurrency int
-	WG          sync.WaitGroup
+	ID           string    `json:"id" sql:"id"`
+	ServiceID    string    `json:"service_id" sql:"service_id"`
+	Status       string    `json:"status" sql:"status"`
+	Start        time.Time `json:"start_at" sql:"start_at"`
+	Finish       time.Time `json:"finish_at" sql:"finish_at"`
+	Params       []Param   `json:"parameters" sql:"parameters" field:"jsonb"`
+	Tasks        []Task    `json:"tasks"`
+	SystemParams map[string]string
+	Execution    chan *Task
+	Responses    chan *Task
+	Instance     int
+	Concurrency  int
+	WG           sync.WaitGroup
 }
 
-func (j *Job) run() {
-	//TODO: Check and wait until JOB Instance is in created status
+func (j *Job) run(serviceID string) {
+	db.LoadStruct(shared.TableCoreJobInstances, j, builder.Equal("id", j.ID))
+	db.LoadStruct(shared.TableCoreJobTaskInstances, &j.Tasks, builder.Equal("job_instance_id", j.ID))
+	//TODO: verify db loadstruct error and update job with status fail
+
 	j.Start = time.Now()
 	j.Status = statusProcessing
-	//TODO: Update job instance on DB (status, service_id)
-	//TODO: Read tasks from database
-	mockTasks(&j.Tasks)
+	j.ServiceID = serviceID
 
-	fmt.Printf("JOB: %s | Worker: %02d | JOB Instance ID: %s | Total tasks: %d\n", j.ServiceID, j.Instance, j.ID, len(j.Tasks))
-
-	//TODO: Get Tasks params
+	//db.UpdateStruct(shared.TableCoreJobInstances, j, builder.Equal("id", j.ID), "start_at", "status", "service_id")
+	fmt.Printf("Service ID: %s | Worker: %02d | JOB Instance ID: %s | Total tasks: %d\n", j.ServiceID, j.Instance, j.ID, len(j.Tasks))
 
 	j.WG.Add(len(j.Tasks))
 	j.defineTasksToExecute("", "", 0)
 	j.WG.Wait()
 
 	j.Finish = time.Now()
+	//TODO check if there were any errors before defining status completed
+	j.Status = statusCompleted
+	//db.UpdateStruct(shared.TableCoreJobInstances, j, builder.Equal("id", j.ID), "finish_at", "status")
+
 	duration := time.Since(j.Start)
-	fmt.Printf("JOB: %s | Worker: %02d | Completed in %fs\n", j.ServiceID, j.Instance, duration.Seconds())
+	fmt.Printf("Service ID: %s | Worker: %02d | Completed in %fs\n", j.ServiceID, j.Instance, duration.Seconds())
 }
 
 func (j *Job) work() {
 	for tsk := range j.Execution {
+		j.parseTaskParams(tsk)
 		tsk.Run(j.Responses)
 	}
 }
@@ -59,7 +70,7 @@ func (j *Job) response() {
 }
 
 // Process keep checkin channel to process job messages
-func (j *Job) Process(jobs <-chan *amqp.Message) {
+func (j *Job) Process(jobs <-chan *amqp.Message, serviceID string) {
 
 	for i := 0; i < j.Concurrency; i++ {
 		go j.work()
@@ -68,14 +79,14 @@ func (j *Job) Process(jobs <-chan *amqp.Message) {
 	go func() {
 		for tsk := range j.Responses {
 			j.WG.Done()
-			j.defineTasksToExecute(tsk.ID, tsk.ParentID, tsk.Sequence)
+			j.defineTasksToExecute(tsk.TaskID, tsk.ParentID, tsk.Sequence)
 		}
 	}()
 
 	fmt.Printf("Worker %02d started [Tasks: %02d]\n", j.Instance, j.Concurrency)
 	for msg := range jobs {
 		j.ID = msg.ID
-		j.run()
+		j.run(serviceID)
 	}
 }
 
@@ -114,169 +125,36 @@ func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
 
 }
 
-func mockTasks(tasks *[]Task) {
-	t := Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "AAA",
-		ExecTimeout: 5,
+func (j *Job) getParamValue(path string) string {
+	param := strings.Split(path[1:len(path)-1], ".")
+
+	switch strings.ToLower(param[0]) {
+	case "system":
+		return j.SystemParams[param[1]]
+	case "job":
+		for _, p := range j.Params {
+			if param[1] == p.Key {
+				return p.Value
+			}
+		}
+	case "task":
+		for _, t := range j.Tasks {
+			if t.Code == param[1] {
+				return t.getParamValue(param[2])
+			}
+		}
+	default:
+		return ""
 	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "BBB",
-		ExecTimeout: 4,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "BB1",
-		ExecTimeout: 6,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "BB2",
-		ExecTimeout: 2,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "BB3",
-		ExecTimeout: 10,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "B31",
-		ExecTimeout: 1,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "B32",
-		ExecTimeout: 1,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "CCC",
-		ExecTimeout: 1,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "DDD",
-		ExecTimeout: 2,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "DD1",
-		ExecTimeout: 5,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "DD2",
-		ExecTimeout: 2,
-	}
-	*tasks = append(*tasks, t)
+	return ""
 }
 
-func mockTasksParents(tasks *[]Task) {
-	t := Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "AAA",
-		ExecTimeout: 2,
+func (j *Job) parseTaskParams(tsk *Task) {
+	refParams := tsk.getReferenceParams()
+	for _, param := range refParams {
+		value := j.getParamValue(param)
+		tsk.ExecAddress = strings.ReplaceAll(tsk.ExecAddress, param, value)
+		tsk.ExecPayload = strings.ReplaceAll(tsk.ExecPayload, param, value)
+		//TODO: check rollback address and payload for params
 	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "BBB",
-		ExecTimeout: 5,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "BB1",
-		ParentID:    "BBB",
-		ExecTimeout: 1,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "BB2",
-		ParentID:    "BBB",
-		ExecTimeout: 2,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    1,
-		ID:          "BB3",
-		ParentID:    "BBB",
-		ExecTimeout: 10,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "B31",
-		ParentID:    "BB3",
-		ExecTimeout: 1,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    1,
-		ID:          "B32",
-		ParentID:    "BB3",
-		ExecTimeout: 1,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    1,
-		ID:          "CCC",
-		ExecTimeout: 1,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    2,
-		ID:          "DDD",
-		ExecTimeout: 2,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    0,
-		ID:          "DD1",
-		ParentID:    "DDD",
-		ExecTimeout: 5,
-	}
-	*tasks = append(*tasks, t)
-	t = Task{
-		Status:      statusCreated,
-		Sequence:    1,
-		ID:          "DD2",
-		ParentID:    "DDD",
-		ExecTimeout: 2,
-	}
-	*tasks = append(*tasks, t)
 }

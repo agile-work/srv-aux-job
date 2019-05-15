@@ -1,10 +1,17 @@
 package controllers
 
-// Param represents an task param key value
+const (
+	paramTypeSystem string = "system"
+	paramTypeSelf   string = "self"
+	paramTypeJob    string = "job"
+	paramTypeTask   string = "task"
+)
+
+// Param represents a param key value
 type Param struct {
-	ID        string `json:"id" sql:"id"`
-	Type      string `json:"param_type" sql:"param_type"`
-	Reference string `json:"param_ref" sql:"param_ref"`
-	Key       string `json:"param_key" sql:"param_key"`
-	Value     string `json:"param_value" sql:"param_value"`
+	Type      string `json:"type"`
+	Reference string `json:"ref"`
+	Field     string `json:"field"`
+	Key       string `json:"key"`
+	Value     string `json:"value"`
 }

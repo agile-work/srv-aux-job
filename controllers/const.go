@@ -1,20 +1,21 @@
 package controllers
 
 const (
-	statusCreating    string = "Creating"
-	statusCreated     string = "Created"
-	statusProcessing  string = "Processing"
-	statusCompleted   string = "Completed"
-	statusWarnings    string = "Warnings"
-	statusFail        string = "Fail"
-	statusRollbacking string = "Rollbacking"
-	statusRetrying    string = "Retrying"
+	statusCreating    string = "creating"
+	statusCreated     string = "created"
+	statusInQueue     string = "queued"
+	statusProcessing  string = "processing"
+	statusCompleted   string = "completed"
+	statusWarnings    string = "warnings"
+	statusFail        string = "fail"
+	statusRollbacking string = "rollbacking"
+	statusRetrying    string = "retrying"
 
 	executeQuery     string = "exec_query"
-	executeAPIGet    string = "exec_api_get"
-	executeAPIPost   string = "exec_api_post"
-	executeAPIDelete string = "exec_api_delete"
-	executeAPIUpdate string = "exec_api_update"
+	executeAPIGet    string = "api_get"
+	executeAPIPost   string = "api_post"
+	executeAPIDelete string = "api_delete"
+	executeAPIUpdate string = "api_patch"
 
 	onFailContinue          string = "continue"
 	onFailRetryAndContinue  string = "retry_and_continue"
