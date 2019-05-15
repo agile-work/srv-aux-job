@@ -2,12 +2,16 @@ package controllers
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"regexp"
 	"time"
+
+	shared "github.com/agile-work/srv-shared"
+	"github.com/agile-work/srv-shared/sql-builder/builder"
+	"github.com/agile-work/srv-shared/sql-builder/db"
+
+	"github.com/tidwall/gjson"
 )
 
 // Task represents an task instance that need to be executed in the Job instance
@@ -38,41 +42,32 @@ type Task struct {
 
 // Run executes the task
 func (t *Task) Run(responses chan<- *Task) {
-	fmt.Printf("    Task: %s | Status: %s\n", t.ID, t.Status)
+	t.Status = statusProcessing
 	t.StartAt = time.Now()
 
-	// db.UpdateStruct(shared.TableCoreJobInstanceTasks, t, builder.Equal("id", t.ID))
+	db.UpdateStruct(shared.TableCoreJobTaskInstances, t, builder.Equal("id", t.ID))
 
-	// switch t.ExecAction {
-	// case executeQuery:
-	// 	t.executeQuery()
-	// case executeAPIGet, executeAPIPost, executeAPIUpdate, executeAPIDelete:
-	// 	t.executeAPI()
-	// default:
-	// 	time.Sleep(time.Duration(t.ExecTimeout) * time.Second)
-	// }
-	fmt.Println("")
-	fmt.Println(t.ExecAction)
-	fmt.Println(t.ExecAddress)
-	fmt.Println(t.ExecPayload)
-	fmt.Println("")
-	if len(t.Params) > 0 {
-		t.Params[0].Value = "ID000001"
+	switch t.ExecAction {
+	case executeQuery:
+		t.executeQuery()
+	case executeAPIGet, executeAPIPost, executeAPIUpdate, executeAPIDelete:
+		t.executeAPI()
+	default:
+		time.Sleep(time.Duration(t.ExecTimeout) * time.Second)
 	}
-	t.Status = statusCompleted
+
 	t.FinishAt = time.Now()
-	//db.UpdateStruct(shared.TableCoreJobInstanceTasks, t, builder.Equal("id", t.ID))
+	db.UpdateStruct(shared.TableCoreJobTaskInstances, t, builder.Equal("id", t.ID))
 
 	//TODO: if status = fail implement retry and rollback actions
 
 	responses <- t
-	fmt.Printf("    Task: %s | Status: %s\n", t.ID, t.Status)
 }
 
 func (t *Task) getParamValue(key string) string {
 	for _, p := range t.Params {
 		if key == p.Key {
-			return p.Value
+			return p.String()
 		}
 	}
 	return ""
@@ -90,7 +85,13 @@ func (t *Task) getReferenceParams() []string {
 }
 
 func (t *Task) executeQuery() {
-	t.Status = statusCompleted
+	err := db.Exec(builder.Raw(t.ExecPayload))
+	if err != nil {
+		t.Status = statusFail
+		t.ExecResponse = err.Error()
+	} else {
+		t.Status = statusCompleted
+	}
 }
 
 func (t *Task) executeAPI() {
@@ -131,20 +132,24 @@ func (t *Task) executeAPI() {
 		return
 	}
 
-	t.parseResponseToSelfParams(body)
+	t.parseResponseToParams(body)
 
 	t.Status = statusCompleted
 }
 
-func (t *Task) parseResponseToSelfParams(response []byte) {
-	jsonMap := make(map[string]interface{})
-	json.Unmarshal(response, &jsonMap)
-
+func (t *Task) parseResponseToParams(response []byte) {
+	respString := string(response)
 	for i, p := range t.Params {
-		if p.Type == paramTypeSelf {
-			if val, ok := jsonMap[p.Field]; ok {
-				t.Params[i].Value = val.(string)
-			}
+		val := gjson.Get(respString, p.Field)
+		switch p.Type {
+		case paramTypeString:
+			t.Params[i].Value = val.String()
+		case paramTypeBoolean:
+			t.Params[i].Value = val.Bool()
+		case paramTypeNumber:
+			t.Params[i].Value = val.Float()
+		default:
+			t.Params[i].Value = val.String()
 		}
 	}
 }

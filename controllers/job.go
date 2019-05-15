@@ -63,7 +63,9 @@ func (j *Job) work() {
 
 func (j *Job) response() {
 	for tsk := range j.Responses {
-		fmt.Printf("    Task: %s | Status: %s\n", tsk.ID, tsk.Status)
+		if tsk.Status == statusFail {
+			j.Status = statusFail
+		}
 		j.WG.Done()
 		j.defineTasksToExecute(tsk.ID, tsk.ParentID, tsk.Sequence)
 	}
@@ -100,13 +102,11 @@ func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
 	}
 
 	if sequenceCompleted {
-		fmt.Printf("Sequence %d completed\n", sequence)
 		sequence++
 	}
 
 	for i, t := range j.Tasks {
 		if t.ParentID == parentID && t.Sequence == sequence && t.Status == statusCreated {
-			fmt.Printf("Push to channel execution -> Task %s\n", t.ID)
 			j.Tasks[i].Status = statusProcessing
 			j.Execution <- &j.Tasks[i]
 		}
@@ -116,28 +116,26 @@ func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
 		//Check if has childs to start executing
 		for i, t := range j.Tasks {
 			if t.ParentID == id && t.Sequence == 0 && t.Status == statusCreated {
-				fmt.Printf("Push to channel execution -> Task %s\n", t.ID)
 				j.Tasks[i].Status = statusProcessing
 				j.Execution <- &j.Tasks[i]
 			}
 		}
 	}
-
 }
 
 func (j *Job) getParamValue(path string) string {
 	param := strings.Split(path[1:len(path)-1], ".")
 
 	switch strings.ToLower(param[0]) {
-	case "system":
+	case paramScopeSystem:
 		return j.SystemParams[param[1]]
-	case "job":
+	case paramScopeJob:
 		for _, p := range j.Params {
 			if param[1] == p.Key {
-				return p.Value
+				return p.String()
 			}
 		}
-	case "task":
+	case paramScopeTask:
 		for _, t := range j.Tasks {
 			if t.Code == param[1] {
 				return t.getParamValue(param[2])
