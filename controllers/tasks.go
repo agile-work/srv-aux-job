@@ -42,15 +42,15 @@ type Task struct {
 
 // Run executes the task
 func (t *Task) Run(responses chan<- *Task) {
-	t.Status = statusProcessing
+	t.Status = shared.StatusProcessing
 	t.StartAt = time.Now()
 
 	db.UpdateStruct(shared.TableCoreJobTaskInstances, t, builder.Equal("id", t.ID))
 
 	switch t.ExecAction {
-	case executeQuery:
+	case shared.ExecuteQuery:
 		t.executeQuery()
-	case executeAPIGet, executeAPIPost, executeAPIUpdate, executeAPIDelete:
+	case shared.ExecuteAPIGet, shared.ExecuteAPIPost, shared.ExecuteAPIUpdate, shared.ExecuteAPIDelete:
 		t.executeAPI()
 	default:
 		time.Sleep(time.Duration(t.ExecTimeout) * time.Second)
@@ -87,23 +87,23 @@ func (t *Task) getReferenceParams() []string {
 func (t *Task) executeQuery() {
 	err := db.Exec(builder.Raw(t.ExecPayload))
 	if err != nil {
-		t.Status = statusFail
+		t.Status = shared.StatusFail
 		t.ExecResponse = err.Error()
 	} else {
-		t.Status = statusCompleted
+		t.Status = shared.StatusCompleted
 	}
 }
 
 func (t *Task) executeAPI() {
 	method := ""
 	switch t.ExecAction {
-	case executeAPIGet:
+	case shared.ExecuteAPIGet:
 		method = http.MethodGet
-	case executeAPIPost:
+	case shared.ExecuteAPIPost:
 		method = http.MethodPost
-	case executeAPIUpdate:
+	case shared.ExecuteAPIUpdate:
 		method = http.MethodPatch
-	case executeAPIDelete:
+	case shared.ExecuteAPIDelete:
 		method = http.MethodDelete
 	}
 
@@ -115,26 +115,26 @@ func (t *Task) executeAPI() {
 	request, err := http.NewRequest(method, t.ExecAddress, bytes.NewBuffer([]byte(t.ExecPayload)))
 	request.Header.Set("Content-type", "application/json")
 	if err != nil {
-		t.Status = statusFail
+		t.Status = shared.StatusFail
 		return
 	}
 
 	resp, err := client.Do(request)
 	if err != nil {
-		t.Status = statusFail
+		t.Status = shared.StatusFail
 		return
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		t.Status = statusFail
+		t.Status = shared.StatusFail
 		return
 	}
 
 	t.parseResponseToParams(body)
 
-	t.Status = statusCompleted
+	t.Status = shared.StatusCompleted
 }
 
 func (t *Task) parseResponseToParams(response []byte) {

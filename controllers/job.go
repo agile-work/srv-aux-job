@@ -35,7 +35,7 @@ func (j *Job) run(serviceID string) {
 	//TODO: verify db loadstruct error and update job with status fail
 
 	j.Start = time.Now()
-	j.Status = statusProcessing
+	j.Status = shared.StatusProcessing
 	j.ServiceID = serviceID
 
 	//db.UpdateStruct(shared.TableCoreJobInstances, j, builder.Equal("id", j.ID), "start_at", "status", "service_id")
@@ -47,7 +47,7 @@ func (j *Job) run(serviceID string) {
 
 	j.Finish = time.Now()
 	//TODO check if there were any errors before defining status completed
-	j.Status = statusCompleted
+	j.Status = shared.StatusCompleted
 	//db.UpdateStruct(shared.TableCoreJobInstances, j, builder.Equal("id", j.ID), "finish_at", "status")
 
 	duration := time.Since(j.Start)
@@ -63,8 +63,8 @@ func (j *Job) work() {
 
 func (j *Job) response() {
 	for tsk := range j.Responses {
-		if tsk.Status == statusFail {
-			j.Status = statusFail
+		if tsk.Status == shared.StatusFail {
+			j.Status = shared.StatusFail
 		}
 		j.WG.Done()
 		j.defineTasksToExecute(tsk.ID, tsk.ParentID, tsk.Sequence)
@@ -96,7 +96,7 @@ func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
 	//check if sequence is completed
 	sequenceCompleted := true
 	for _, t := range j.Tasks {
-		if t.ParentID == parentID && t.Sequence == sequence && (t.Status == statusProcessing || t.Status == statusCreated) {
+		if t.ParentID == parentID && t.Sequence == sequence && (t.Status == shared.StatusProcessing || t.Status == shared.StatusCreated) {
 			sequenceCompleted = false
 		}
 	}
@@ -106,8 +106,8 @@ func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
 	}
 
 	for i, t := range j.Tasks {
-		if t.ParentID == parentID && t.Sequence == sequence && t.Status == statusCreated {
-			j.Tasks[i].Status = statusProcessing
+		if t.ParentID == parentID && t.Sequence == sequence && t.Status == shared.StatusCreated {
+			j.Tasks[i].Status = shared.StatusProcessing
 			j.Execution <- &j.Tasks[i]
 		}
 	}
@@ -115,8 +115,8 @@ func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
 	if id != "" {
 		//Check if has childs to start executing
 		for i, t := range j.Tasks {
-			if t.ParentID == id && t.Sequence == 0 && t.Status == statusCreated {
-				j.Tasks[i].Status = statusProcessing
+			if t.ParentID == id && t.Sequence == 0 && t.Status == shared.StatusCreated {
+				j.Tasks[i].Status = shared.StatusProcessing
 				j.Execution <- &j.Tasks[i]
 			}
 		}
