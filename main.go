@@ -40,6 +40,13 @@ func main() {
 	}
 	fmt.Println("Database connected")
 
+	jobsQueue, err := amqp.New("amqp://guest:guest@localhost:5672/", "jobs", false)
+	if err != nil {
+		fmt.Println("Error connecting to queue")
+		return
+	}
+	fmt.Println("Queue connected")
+
 	service, err := shared.RegisterService(*jobInstanceName, shared.ServiceTypeAuxiliary)
 	if err != nil {
 		fmt.Println("Error registering service in the database")
@@ -49,9 +56,11 @@ func main() {
 
 	jobMessages := make(chan *amqp.Message)
 
-	//TODO: Load system params
-	systemParams := make(map[string]string)
-	systemParams["api_host"] = "https://localhost:8080"
+	systemParams, err := shared.GetSystemParams()
+	if err != nil {
+		// TODO: Pensar em como tratar esse erro
+		fmt.Println(err.Error())
+	}
 
 	for w := 1; w <= *jobConcurrencyWorkers; w++ {
 		job := &controllers.Job{
@@ -64,8 +73,6 @@ func main() {
 		pool = append(pool, job)
 		go job.Process(jobMessages, service.ID)
 	}
-
-	jobsQueue, _ := amqp.New("amqp://guest:guest@localhost:5672/", "jobs", false)
 
 	msgs, _ := jobsQueue.Stream()
 
@@ -82,11 +89,6 @@ func main() {
 			service.Heartbeat(t)
 		}
 	}()
-
-	jobsQueue.Push(amqp.Message{
-		ID:    "4b8948b1-6778-47ca-9c5b-f621985d3ceb",
-		Queue: "jobs",
-	})
 
 	<-stopChan
 	fmt.Println("Shutting down Service...")

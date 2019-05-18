@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"bytes"
+	"crypto/tls"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"regexp"
@@ -41,8 +43,8 @@ type Task struct {
 }
 
 // Run executes the task
-func (t *Task) Run(responses chan<- *Task) {
-	t.Status = shared.StatusProcessing
+func (t *Task) Run(responses chan<- *Task, token string) {
+	t.Status = shared.JobStatusProcessing
 	t.StartAt = time.Now()
 
 	db.UpdateStruct(shared.TableCoreJobTaskInstances, t, builder.Equal("id", t.ID))
@@ -51,7 +53,7 @@ func (t *Task) Run(responses chan<- *Task) {
 	case shared.ExecuteQuery:
 		t.executeQuery()
 	case shared.ExecuteAPIGet, shared.ExecuteAPIPost, shared.ExecuteAPIUpdate, shared.ExecuteAPIDelete:
-		t.executeAPI()
+		t.executeAPI(token)
 	default:
 		time.Sleep(time.Duration(t.ExecTimeout) * time.Second)
 	}
@@ -87,14 +89,14 @@ func (t *Task) getReferenceParams() []string {
 func (t *Task) executeQuery() {
 	err := db.Exec(builder.Raw(t.ExecPayload))
 	if err != nil {
-		t.Status = shared.StatusFail
+		t.Status = shared.JobStatusFail
 		t.ExecResponse = err.Error()
 	} else {
-		t.Status = shared.StatusCompleted
+		t.Status = shared.JobStatusCompleted
 	}
 }
 
-func (t *Task) executeAPI() {
+func (t *Task) executeAPI(token string) {
 	method := ""
 	switch t.ExecAction {
 	case shared.ExecuteAPIGet:
@@ -112,29 +114,38 @@ func (t *Task) executeAPI() {
 		Timeout: timeout,
 	}
 
+	// TODO: Retirar quando o certificado estiver ok
+	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	request, err := http.NewRequest(method, t.ExecAddress, bytes.NewBuffer([]byte(t.ExecPayload)))
+	fmt.Println(t.ExecAddress) // TODO: debug
+	fmt.Println(t.ExecPayload) // TODO: debug
 	request.Header.Set("Content-type", "application/json")
+	request.Header.Set("Authorization", token)
+	// TODO: pegar o language do token se o content-language não for passado
+	request.Header.Set("Content-Language", "pt-br")
 	if err != nil {
-		t.Status = shared.StatusFail
+		t.Status = shared.JobStatusFail
 		return
 	}
 
 	resp, err := client.Do(request)
 	if err != nil {
-		t.Status = shared.StatusFail
+		t.Status = shared.JobStatusFail
 		return
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		t.Status = shared.StatusFail
+		t.Status = shared.JobStatusFail
 		return
 	}
+	fmt.Println(string(body)) // TODO: debug
 
 	t.parseResponseToParams(body)
 
-	t.Status = shared.StatusCompleted
+	t.ExecResponse = string(body)
+	t.Status = shared.JobStatusCompleted
 }
 
 func (t *Task) parseResponseToParams(response []byte) {
