@@ -39,12 +39,12 @@ type Job struct {
 func (j *Job) run(serviceID string) {
 	db.LoadStruct(shared.TableCoreJobInstances, j, builder.Equal("id", j.ID))
 	db.LoadStruct(shared.TableCoreJobTaskInstances, &j.Tasks, builder.Equal("job_instance_id", j.ID))
-	//TODO: verify db loadstruct error and update job with status fail
+	// TODO: verify db loadstruct error and update job with status fail
 
 	j.Start = time.Now()
 	j.Status = shared.JobStatusProcessing
 	j.ServiceID = serviceID
-	j.Token = j.loadSystemToken()
+	j.Token, _ = j.loadSystemToken()
 
 	db.UpdateStruct(shared.TableCoreJobInstances, j, builder.Equal("id", j.ID), "start_at", "status", "service_id")
 	fmt.Printf("Service ID: %s | Worker: %02d | JOB Instance ID: %s | Total tasks: %d\n", j.ServiceID, j.Instance, j.ID, len(j.Tasks))
@@ -54,7 +54,7 @@ func (j *Job) run(serviceID string) {
 	j.WG.Wait()
 
 	j.Finish = time.Now()
-	//TODO check if there were any errors before defining status completed
+	// TODO check if there were any errors before defining status completed
 	j.Status = shared.JobStatusCompleted
 	db.UpdateStruct(shared.TableCoreJobInstances, j, builder.Equal("id", j.ID), "finish_at", "status")
 
@@ -165,7 +165,8 @@ func (j *Job) parseTaskParams(tsk *Task) {
 	}
 }
 
-func (j *Job) loadSystemToken() string {
+// loadSystemToken get a valid token to execute job
+func (j *Job) loadSystemToken() (string, error) {
 	url := fmt.Sprintf(
 		"%s%s",
 		j.SystemParams[shared.SysParamAPIHost],
@@ -173,7 +174,7 @@ func (j *Job) loadSystemToken() string {
 	)
 	payload := bytes.NewBuffer([]byte(
 		fmt.Sprintf(
-			"{\"email\": \"%s\", \"password\": \"%s\"}",
+			`{"email": "%s", "password": "%s"}`,
 			j.SystemParams[shared.SysParamAPILoginEmail],
 			j.SystemParams[shared.SysParamAPILoginPassword],
 		),
@@ -182,16 +183,13 @@ func (j *Job) loadSystemToken() string {
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	res, err := http.Post(url, "application/json", payload)
 	if err != nil {
-		// TODO: Pensar em como tratar esse erro
-		fmt.Println(err.Error())
+		return "", err
 	}
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		// TODO: Pensar em como tratar esse erro
-		fmt.Println(err.Error())
+		return "", err
 	}
-	fmt.Println(gjson.Get(string(body), "data.token").String()) // TODO: debud
 
-	return gjson.Get(string(body), "data.token").String()
+	return gjson.Get(string(body), "data.token").String(), nil
 }

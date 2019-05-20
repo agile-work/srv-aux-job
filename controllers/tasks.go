@@ -3,7 +3,6 @@ package controllers
 import (
 	"bytes"
 	"crypto/tls"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"regexp"
@@ -117,12 +116,9 @@ func (t *Task) executeAPI(token string) {
 	// TODO: Retirar quando o certificado estiver ok
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	request, err := http.NewRequest(method, t.ExecAddress, bytes.NewBuffer([]byte(t.ExecPayload)))
-	fmt.Println(t.ExecAddress) // TODO: debug
-	fmt.Println(t.ExecPayload) // TODO: debug
 	request.Header.Set("Content-type", "application/json")
 	request.Header.Set("Authorization", token)
-	// TODO: pegar o language do token se o content-language não for passado
-	request.Header.Set("Content-Language", "pt-br")
+
 	if err != nil {
 		t.Status = shared.JobStatusFail
 		return
@@ -140,7 +136,6 @@ func (t *Task) executeAPI(token string) {
 		t.Status = shared.JobStatusFail
 		return
 	}
-	fmt.Println(string(body)) // TODO: debug
 
 	t.parseResponseToParams(body)
 
