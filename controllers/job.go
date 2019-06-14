@@ -37,8 +37,8 @@ type Job struct {
 }
 
 func (j *Job) run(serviceID string) {
-	db.LoadStruct(shared.TableCoreJobInstances, j, builder.Equal("id", j.ID))
-	db.LoadStruct(shared.TableCoreJobTaskInstances, &j.Tasks, builder.Equal("job_instance_id", j.ID))
+	db.SelectStruct(shared.TableCoreJobInstances, j, builder.Equal("id", j.ID))
+	db.SelectStruct(shared.TableCoreJobTaskInstances, &j.Tasks, builder.Equal("job_instance_id", j.ID))
 	// TODO: verify db loadstruct error and update job with status fail
 
 	j.Start = time.Now()
