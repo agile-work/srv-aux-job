@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/agile-work/srv-aux-job/controllers"
 	shared "github.com/agile-work/srv-shared"
 	"github.com/agile-work/srv-shared/amqp"
+	"github.com/agile-work/srv-shared/service"
 	"github.com/agile-work/srv-shared/sql-builder/db"
 )
 
@@ -47,7 +47,7 @@ func main() {
 	}
 	fmt.Println("Queue connected")
 
-	service, err := shared.RegisterService(*jobInstanceName, shared.ServiceTypeAuxiliary)
+	srv, err := service.Register(*jobInstanceName, shared.ServiceTypeAuxiliary)
 	if err != nil {
 		fmt.Println("Error registering service in the database")
 		return
@@ -56,7 +56,7 @@ func main() {
 
 	jobMessages := make(chan *amqp.Message)
 
-	systemParams, err := shared.GetSystemParams()
+	systemParams, err := util.GetSystemParams()
 	if err != nil {
 		// TODO: Pensar em como tratar esse erro
 		fmt.Println(err.Error())
@@ -83,17 +83,10 @@ func main() {
 		}
 	}()
 
-	ticker := time.NewTicker(time.Duration(*heartbeatInterval) * time.Second)
-	go func() {
-		for t := range ticker.C {
-			service.Heartbeat(t)
-		}
-	}()
-
 	<-stopChan
 	fmt.Println("Shutting down Service...")
 
-	service.Down()
+	srv.Down()
 
 	amqp.Close()
 	db.Close()
