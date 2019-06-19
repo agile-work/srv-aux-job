@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"time"
 
-	shared "github.com/agile-work/srv-shared"
+	"github.com/agile-work/srv-shared/constants"
 	"github.com/agile-work/srv-shared/sql-builder/builder"
 	"github.com/agile-work/srv-shared/sql-builder/db"
 
@@ -43,22 +43,23 @@ type Task struct {
 
 // Run executes the task
 func (t *Task) Run(responses chan<- *Task, token string) {
-	t.Status = shared.JobStatusProcessing
+	t.Status = constants.JobStatusProcessing
 	t.StartAt = time.Now()
+	opt := &db.Options{Conditions: builder.Equal("id", t.ID)}
 
-	db.UpdateStruct(shared.TableCoreJobTaskInstances, t, builder.Equal("id", t.ID))
+	db.UpdateStruct(constants.TableCoreJobTaskInstances, t, opt)
 
 	switch t.ExecAction {
-	case shared.ExecuteQuery:
+	case constants.ExecuteQuery:
 		t.executeQuery()
-	case shared.ExecuteAPIGet, shared.ExecuteAPIPost, shared.ExecuteAPIUpdate, shared.ExecuteAPIDelete:
+	case constants.ExecuteAPIGet, constants.ExecuteAPIPost, constants.ExecuteAPIUpdate, constants.ExecuteAPIDelete:
 		t.executeAPI(token)
 	default:
 		time.Sleep(time.Duration(t.ExecTimeout) * time.Second)
 	}
 
 	t.FinishAt = time.Now()
-	db.UpdateStruct(shared.TableCoreJobTaskInstances, t, builder.Equal("id", t.ID))
+	db.UpdateStruct(constants.TableCoreJobTaskInstances, t, opt)
 
 	//TODO: if status = fail implement retry and rollback actions
 
@@ -88,23 +89,23 @@ func (t *Task) getReferenceParams() []string {
 func (t *Task) executeQuery() {
 	err := db.Exec(builder.Raw(t.ExecPayload))
 	if err != nil {
-		t.Status = shared.JobStatusFail
+		t.Status = constants.JobStatusFail
 		t.ExecResponse = err.Error()
 	} else {
-		t.Status = shared.JobStatusCompleted
+		t.Status = constants.JobStatusCompleted
 	}
 }
 
 func (t *Task) executeAPI(token string) {
 	method := ""
 	switch t.ExecAction {
-	case shared.ExecuteAPIGet:
+	case constants.ExecuteAPIGet:
 		method = http.MethodGet
-	case shared.ExecuteAPIPost:
+	case constants.ExecuteAPIPost:
 		method = http.MethodPost
-	case shared.ExecuteAPIUpdate:
+	case constants.ExecuteAPIUpdate:
 		method = http.MethodPatch
-	case shared.ExecuteAPIDelete:
+	case constants.ExecuteAPIDelete:
 		method = http.MethodDelete
 	}
 
@@ -120,27 +121,27 @@ func (t *Task) executeAPI(token string) {
 	request.Header.Set("Authorization", token)
 
 	if err != nil {
-		t.Status = shared.JobStatusFail
+		t.Status = constants.JobStatusFail
 		return
 	}
 
 	resp, err := client.Do(request)
 	if err != nil {
-		t.Status = shared.JobStatusFail
+		t.Status = constants.JobStatusFail
 		return
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		t.Status = shared.JobStatusFail
+		t.Status = constants.JobStatusFail
 		return
 	}
 
 	t.parseResponseToParams(body)
 
 	t.ExecResponse = string(body)
-	t.Status = shared.JobStatusCompleted
+	t.Status = constants.JobStatusCompleted
 }
 
 func (t *Task) parseResponseToParams(response []byte) {

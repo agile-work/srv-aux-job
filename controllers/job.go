@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	shared "github.com/agile-work/srv-shared"
 	"github.com/agile-work/srv-shared/amqp"
+	"github.com/agile-work/srv-shared/constants"
 	"github.com/agile-work/srv-shared/sql-builder/builder"
 	"github.com/agile-work/srv-shared/sql-builder/db"
 
@@ -37,16 +37,17 @@ type Job struct {
 }
 
 func (j *Job) run(serviceID string) {
-	db.SelectStruct(shared.TableCoreJobInstances, j, builder.Equal("id", j.ID))
-	db.SelectStruct(shared.TableCoreJobTaskInstances, &j.Tasks, builder.Equal("job_instance_id", j.ID))
+	opt := &db.Options{Conditions: builder.Equal("id", j.ID)}
+	db.SelectStruct(constants.TableCoreJobInstances, j, opt)
+	db.SelectStruct(constants.TableCoreJobTaskInstances, &j.Tasks, &db.Options{Conditions: builder.Equal("job_instance_id", j.ID)})
 	// TODO: verify db loadstruct error and update job with status fail
 
 	j.Start = time.Now()
-	j.Status = shared.JobStatusProcessing
+	j.Status = constants.JobStatusProcessing
 	j.ServiceID = serviceID
 	j.Token, _ = j.loadSystemToken()
 
-	db.UpdateStruct(shared.TableCoreJobInstances, j, builder.Equal("id", j.ID), "start_at", "status", "service_id")
+	db.UpdateStruct(constants.TableCoreJobInstances, j, opt, "start_at", "status", "service_id")
 	fmt.Printf("Service ID: %s | Worker: %02d | JOB Instance ID: %s | Total tasks: %d\n", j.ServiceID, j.Instance, j.ID, len(j.Tasks))
 
 	j.WG.Add(len(j.Tasks))
@@ -55,8 +56,8 @@ func (j *Job) run(serviceID string) {
 
 	j.Finish = time.Now()
 	// TODO check if there were any errors before defining status completed
-	j.Status = shared.JobStatusCompleted
-	db.UpdateStruct(shared.TableCoreJobInstances, j, builder.Equal("id", j.ID), "finish_at", "status")
+	j.Status = constants.JobStatusCompleted
+	db.UpdateStruct(constants.TableCoreJobInstances, j, opt, "finish_at", "status")
 
 	duration := time.Since(j.Start)
 	fmt.Printf("Service ID: %s | Worker: %02d | Completed in %fs\n", j.ServiceID, j.Instance, duration.Seconds())
@@ -71,8 +72,8 @@ func (j *Job) work() {
 
 func (j *Job) response() {
 	for tsk := range j.Responses {
-		if tsk.Status == shared.JobStatusFail {
-			j.Status = shared.JobStatusFail
+		if tsk.Status == constants.JobStatusFail {
+			j.Status = constants.JobStatusFail
 		}
 		j.WG.Done()
 		j.defineTasksToExecute(tsk.ID, tsk.ParentID, tsk.Sequence)
@@ -104,7 +105,7 @@ func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
 	//check if sequence is completed
 	sequenceCompleted := true
 	for _, t := range j.Tasks {
-		if t.ParentID == parentID && t.Sequence == sequence && (t.Status == shared.JobStatusProcessing || t.Status == shared.JobStatusCreated) {
+		if t.ParentID == parentID && t.Sequence == sequence && (t.Status == constants.JobStatusProcessing || t.Status == constants.JobStatusCreated) {
 			sequenceCompleted = false
 		}
 	}
@@ -114,8 +115,8 @@ func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
 	}
 
 	for i, t := range j.Tasks {
-		if t.ParentID == parentID && t.Sequence == sequence && t.Status == shared.JobStatusCreated {
-			j.Tasks[i].Status = shared.JobStatusProcessing
+		if t.ParentID == parentID && t.Sequence == sequence && t.Status == constants.JobStatusCreated {
+			j.Tasks[i].Status = constants.JobStatusProcessing
 			j.Execution <- &j.Tasks[i]
 		}
 	}
@@ -123,8 +124,8 @@ func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
 	if id != "" {
 		//Check if has childs to start executing
 		for i, t := range j.Tasks {
-			if t.ParentID == id && t.Sequence == 0 && t.Status == shared.JobStatusCreated {
-				j.Tasks[i].Status = shared.JobStatusProcessing
+			if t.ParentID == id && t.Sequence == 0 && t.Status == constants.JobStatusCreated {
+				j.Tasks[i].Status = constants.JobStatusProcessing
 				j.Execution <- &j.Tasks[i]
 			}
 		}
@@ -169,14 +170,14 @@ func (j *Job) parseTaskParams(tsk *Task) {
 func (j *Job) loadSystemToken() (string, error) {
 	url := fmt.Sprintf(
 		"%s%s",
-		j.SystemParams[shared.SysParamAPIHost],
-		j.SystemParams[shared.SysParamAPILoginURL],
+		j.SystemParams[constants.SysParamAPIHost],
+		j.SystemParams[constants.SysParamAPILoginURL],
 	)
 	payload := bytes.NewBuffer([]byte(
 		fmt.Sprintf(
 			`{"email": "%s", "password": "%s"}`,
-			j.SystemParams[shared.SysParamAPILoginEmail],
-			j.SystemParams[shared.SysParamAPILoginPassword],
+			j.SystemParams[constants.SysParamAPILoginEmail],
+			j.SystemParams[constants.SysParamAPILoginPassword],
 		),
 	))
 	// TODO: Retirar quando o certificado estiver ok

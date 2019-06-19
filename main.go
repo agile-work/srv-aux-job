@@ -7,10 +7,11 @@ import (
 	"os/signal"
 
 	"github.com/agile-work/srv-aux-job/controllers"
-	shared "github.com/agile-work/srv-shared"
 	"github.com/agile-work/srv-shared/amqp"
+	"github.com/agile-work/srv-shared/constants"
 	"github.com/agile-work/srv-shared/service"
 	"github.com/agile-work/srv-shared/sql-builder/db"
+	"github.com/agile-work/srv-shared/util"
 )
 
 var (
@@ -47,7 +48,7 @@ func main() {
 	}
 	fmt.Println("Queue connected")
 
-	srv, err := service.Register(*jobInstanceName, shared.ServiceTypeAuxiliary)
+	srv, err := service.Register(*jobInstanceName, constants.ServiceTypeAuxiliary)
 	if err != nil {
 		fmt.Println("Error registering service in the database")
 		return
