@@ -15,10 +15,9 @@ import (
 )
 
 var (
-	jobInstanceName        = flag.String("name", "Job", "Name of this instance")
+	serviceInstanceName    = flag.String("name", "Job", "Name of this instance")
 	jobConcurrencyWorkers  = flag.Int("jobs", 3, "Number of job processing concurrency")
 	taskConcurrencyWorkers = flag.Int("taks", 3, "Number of tasks processing concurrency")
-	heartbeatInterval      = flag.Int("heartbeat", 10, "Number of seconds to send a heartbeat")
 	host                   = "cryo.cdnm8viilrat.us-east-2.rds-preview.amazonaws.com"
 	port                   = 5432
 	user                   = "cryoadmin"
@@ -33,7 +32,7 @@ func main() {
 	signal.Notify(stopChan, os.Interrupt)
 
 	flag.Parse()
-	fmt.Println("Starting Service...")
+	fmt.Printf("Starting Service %s...\n", *serviceInstanceName)
 	err := db.Connect(host, port, user, password, dbName, false)
 	if err != nil {
 		fmt.Println("Error connecting to database")
@@ -48,13 +47,12 @@ func main() {
 	}
 	fmt.Println("Queue connected")
 
-	srv, err := service.Register(*jobInstanceName, constants.ServiceTypeAuxiliary)
+	srv, err := service.Register(*serviceInstanceName, constants.ServiceTypeAuxiliary)
 	if err != nil {
-		fmt.Println("Error registering service in the database")
-		return
+		fmt.Println("Error connecting to Realtime WS")
+		fmt.Println(err.Error())
 	}
-	// TODO: fix
-	// fmt.Printf("Service %s registered\n", service.ID)
+	fmt.Println("Realtime web socket connected")
 
 	jobMessages := make(chan *amqp.Message)
 
@@ -73,8 +71,7 @@ func main() {
 			SystemParams: systemParams,
 		}
 		pool = append(pool, job)
-		// TODO: fix
-		// go job.Process(jobMessages, service.ID)
+		go job.Process(jobMessages, *serviceInstanceName)
 	}
 
 	msgs, _ := jobsQueue.Stream()
@@ -87,14 +84,10 @@ func main() {
 	}()
 
 	<-stopChan
-	fmt.Println("Shutting down Service...")
-
+	fmt.Println("\nShutting down Service...")
 	srv.Down()
-
 	amqp.Close()
 	db.Close()
-	// TODO: fix
-	// ticker.Stop()
 	//TODO check if jobsQueue.Stream() is closed before close jobMessage channel
 	//TODO check if there is a job being executed and wait before exit
 	close(jobMessages)
