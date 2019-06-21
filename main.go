@@ -53,7 +53,8 @@ func main() {
 		fmt.Println("Error registering service in the database")
 		return
 	}
-	fmt.Printf("Service %s registered\n", service.ID)
+	// TODO: fix
+	// fmt.Printf("Service %s registered\n", service.ID)
 
 	jobMessages := make(chan *amqp.Message)
 
@@ -72,7 +73,8 @@ func main() {
 			SystemParams: systemParams,
 		}
 		pool = append(pool, job)
-		go job.Process(jobMessages, service.ID)
+		// TODO: fix
+		// go job.Process(jobMessages, service.ID)
 	}
 
 	msgs, _ := jobsQueue.Stream()
@@ -91,7 +93,8 @@ func main() {
 
 	amqp.Close()
 	db.Close()
-	ticker.Stop()
+	// TODO: fix
+	// ticker.Stop()
 	//TODO check if jobsQueue.Stream() is closed before close jobMessage channel
 	//TODO check if there is a job being executed and wait before exit
 	close(jobMessages)
