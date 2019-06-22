@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"time"
+
+	"github.com/agile-work/srv-shared/rdb"
 
 	"github.com/agile-work/srv-aux-job/controllers"
-	"github.com/agile-work/srv-shared/amqp"
 	"github.com/agile-work/srv-shared/constants"
-	"github.com/agile-work/srv-shared/service"
+	"github.com/agile-work/srv-shared/socket"
 	"github.com/agile-work/srv-shared/sql-builder/db"
 	"github.com/agile-work/srv-shared/util"
 )
@@ -23,6 +25,11 @@ var (
 	user                   = "cryoadmin"
 	password               = "x3FhcrWDxnxCq9p"
 	dbName                 = "cryo"
+	redisHost              = flag.String("redisHost", "localhost", "Redis host")
+	redisPort              = flag.Int("redisPort", 6379, "Redis port")
+	redisPass              = flag.String("redisPass", "redis123", "Redis password")
+	wsHost                 = flag.String("wsHost", "localhost", "Realtime host")
+	wsPort                 = flag.Int("wsPort", 8010, "Realtime port")
 )
 
 var pool []*controllers.Job
@@ -40,21 +47,15 @@ func main() {
 	}
 	fmt.Println("Database connected")
 
-	jobsQueue, err := amqp.New("amqp://guest:guest@localhost:5672/", "jobs", false)
-	if err != nil {
-		fmt.Println("Error connecting to queue")
-		return
-	}
-	fmt.Println("Queue connected")
+	rdb.Init(*redisHost, *redisPort, *redisPass)
+	go rdb.HandleReconnection(5)
+	defer rdb.Close()
 
-	srv, err := service.Register(*serviceInstanceName, constants.ServiceTypeAuxiliary)
-	if err != nil {
-		fmt.Println("Error connecting to Realtime WS")
-		fmt.Println(err.Error())
-	}
-	fmt.Println("Realtime web socket connected")
+	socket.Init(*serviceInstanceName, constants.ServiceTypeAuxiliary, *wsHost, *wsPort)
+	go socket.HandleReconnection(5)
+	defer socket.Close()
 
-	jobMessages := make(chan *amqp.Message)
+	jobMessages := make(chan string)
 
 	systemParams, err := util.GetSystemParams()
 	if err != nil {
@@ -74,23 +75,46 @@ func main() {
 		go job.Process(jobMessages, *serviceInstanceName)
 	}
 
-	msgs, _ := jobsQueue.Stream()
+	jobInstanceQueue := fmt.Sprintf("worker:%s", *serviceInstanceName)
+	shutdown := false
 
 	go func() {
-		for d := range msgs {
-			jobMessages <- amqp.Parse(d.Body)
-			d.Ack(true)
+		jobInstanceQueueRetry := false
+		for {
+			if rdb.Available() && !shutdown {
+				err := rdb.BRPopLPush("queue:jobs", jobInstanceQueue, 0)
+				if err == nil || jobInstanceQueueRetry {
+					msg, err := rdb.LPop(jobInstanceQueue)
+					if err != nil {
+						jobInstanceQueueRetry = true
+						continue
+					}
+					jobMessages <- msg
+					jobInstanceQueueRetry = false
+				}
+			}
 		}
 	}()
 
 	<-stopChan
 	fmt.Println("\nShutting down Service...")
-	srv.Down()
-	amqp.Close()
-	db.Close()
-	//TODO check if jobsQueue.Stream() is closed before close jobMessage channel
-	//TODO check if there is a job being executed and wait before exit
+	shutdown = true
+	if len(jobMessages) > 0 {
+		fmt.Printf("%d unprocessed jobs\n", len(jobMessages))
+	}
 	close(jobMessages)
+	for poolProcessing() {
+		time.Sleep(2 * time.Second)
+	}
+	db.Close()
 	fmt.Println("Service stopped!")
+}
 
+func poolProcessing() bool {
+	for _, p := range pool {
+		if p.Processing {
+			return true
+		}
+	}
+	return false
 }

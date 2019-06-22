@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agile-work/srv-shared/amqp"
 	"github.com/agile-work/srv-shared/constants"
 	"github.com/agile-work/srv-shared/sql-builder/builder"
 	"github.com/agile-work/srv-shared/sql-builder/db"
@@ -34,9 +33,11 @@ type Job struct {
 	Instance     int
 	Concurrency  int
 	WG           sync.WaitGroup
+	Processing   bool
 }
 
 func (j *Job) run(serviceID string) {
+	j.Processing = true
 	opt := &db.Options{Conditions: builder.Equal("id", j.ID)}
 	db.SelectStruct(constants.TableCoreJobInstances, j, opt)
 	db.SelectStruct(constants.TableCoreJobTaskInstances, &j.Tasks, &db.Options{Conditions: builder.Equal("job_instance_id", j.ID)})
@@ -60,6 +61,7 @@ func (j *Job) run(serviceID string) {
 	db.UpdateStruct(constants.TableCoreJobInstances, j, opt, "finish_at", "status")
 
 	duration := time.Since(j.Start)
+	j.Processing = false
 	fmt.Printf("Service ID: %s | Worker: %02d | Completed in %fs\n", j.ServiceID, j.Instance, duration.Seconds())
 }
 
@@ -81,22 +83,23 @@ func (j *Job) response() {
 }
 
 // Process keep checkin channel to process job messages
-func (j *Job) Process(jobs <-chan *amqp.Message, serviceID string) {
+func (j *Job) Process(jobs <-chan string, serviceID string) {
 
 	for i := 0; i < j.Concurrency; i++ {
 		go j.work()
 	}
 
-	go func() {
-		for tsk := range j.Responses {
-			j.WG.Done()
-			j.defineTasksToExecute(tsk.TaskID, tsk.ParentID, tsk.Sequence)
-		}
-	}()
+	go j.response()
+	// go func() {
+	// 	for tsk := range j.Responses {
+	// 		j.WG.Done()
+	// 		j.defineTasksToExecute(tsk.TaskID, tsk.ParentID, tsk.Sequence)
+	// 	}
+	// }()
 
 	fmt.Printf("Worker %02d started [Tasks: %02d]\n", j.Instance, j.Concurrency)
-	for msg := range jobs {
-		j.ID = msg.ID
+	for id := range jobs {
+		j.ID = id
 		j.run(serviceID)
 	}
 }
