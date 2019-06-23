@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agile-work/srv-shared/rdb"
+	"github.com/agile-work/srv-shared/service"
 
 	"github.com/agile-work/srv-aux-job/controllers"
 	"github.com/agile-work/srv-shared/constants"
@@ -17,7 +18,6 @@ import (
 )
 
 var (
-	serviceInstanceName    = flag.String("name", "Job", "Name of this instance")
 	jobConcurrencyWorkers  = flag.Int("jobs", 3, "Number of job processing concurrency")
 	taskConcurrencyWorkers = flag.Int("taks", 3, "Number of tasks processing concurrency")
 	host                   = "cryo.cdnm8viilrat.us-east-2.rds-preview.amazonaws.com"
@@ -39,7 +39,14 @@ func main() {
 	signal.Notify(stopChan, os.Interrupt)
 
 	flag.Parse()
-	fmt.Printf("Starting Service %s...\n", *serviceInstanceName)
+
+	pid := os.Getpid()
+	hostname, _ := os.Hostname()
+	aux := service.New("Job", constants.ServiceTypeAuxiliary, hostname, 0, pid)
+
+	fmt.Printf("Starting Service %s...\n", aux.Name)
+	fmt.Printf("[Instance: %s | PID: %d]\n", aux.InstanceCode, aux.PID)
+
 	fmt.Println("Database connecting...")
 	err := db.Connect(host, port, user, password, dbName, false)
 	if err != nil {
@@ -51,7 +58,7 @@ func main() {
 	rdb.Init(*redisHost, *redisPort, *redisPass)
 	defer rdb.Close()
 
-	socket.Init(*serviceInstanceName, constants.ServiceTypeAuxiliary, *wsHost, *wsPort)
+	socket.Init(aux, *wsHost, *wsPort)
 	defer socket.Close()
 
 	jobMessages := make(chan string)
@@ -71,10 +78,10 @@ func main() {
 			SystemParams: systemParams,
 		}
 		pool = append(pool, job)
-		go job.Process(jobMessages, *serviceInstanceName)
+		go job.Process(jobMessages, aux.InstanceCode)
 	}
 
-	jobInstanceQueue := fmt.Sprintf("worker:%s", *serviceInstanceName)
+	jobInstanceQueue := fmt.Sprintf("worker:%s", aux.InstanceCode)
 	shutdown := false
 
 	go func() {
@@ -95,7 +102,7 @@ func main() {
 		}
 	}()
 
-	fmt.Printf("Job pid:%d ready...\n", os.Getpid())
+	fmt.Println("Job ready...")
 
 	<-stopChan
 	fmt.Println("\nShutting down Service...")
