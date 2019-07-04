@@ -18,14 +18,13 @@ import (
 // Task represents an task instance that need to be executed in the Job instance
 type Task struct {
 	ID               string    `json:"id" sql:"id" pk:"true"`
-	TaskID           string    `json:"task_id" sql:"task_id"`
+	TaskCode         string    `json:"task_code" sql:"task_code"`
 	JobInstanceID    string    `json:"job_instance_id" sql:"job_instance_id"`
-	Code             string    `json:"code" sql:"code"`
 	Status           string    `json:"status" sql:"status"`
 	StartAt          time.Time `json:"start_at" sql:"start_at"`
 	FinishAt         time.Time `json:"finish_at" sql:"finish_at"`
 	Sequence         int       `json:"task_sequence" sql:"task_sequence"`
-	ParentID         string    `json:"parent_id" sql:"parent_id"`
+	ParentCode       string    `json:"parent_code" sql:"parent_code"`
 	ExecTimeout      int       `json:"exec_timeout" sql:"exec_timeout"`
 	ExecAction       string    `json:"exec_action" sql:"exec_action"`
 	ExecAddress      string    `json:"exec_address" sql:"exec_address"`

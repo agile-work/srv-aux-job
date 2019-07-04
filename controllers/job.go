@@ -58,10 +58,10 @@ func (j *Job) run(serviceID string) {
 	j.Finish = time.Now()
 	// TODO check if there were any errors before defining status completed
 	j.Status = constants.JobStatusCompleted
+	j.Processing = false
 	db.UpdateStruct(constants.TableCoreJobInstances, j, opt, "finish_at", "status")
 
 	duration := time.Since(j.Start)
-	j.Processing = false
 	fmt.Printf("Service ID: %s | Worker: %02d | Completed in %fs\n", j.ServiceID, j.Instance, duration.Seconds())
 }
 
@@ -78,7 +78,7 @@ func (j *Job) response() {
 			j.Status = constants.JobStatusFail
 		}
 		j.WG.Done()
-		j.defineTasksToExecute(tsk.ID, tsk.ParentID, tsk.Sequence)
+		j.defineTasksToExecute(tsk.ID, tsk.ParentCode, tsk.Sequence)
 	}
 }
 
@@ -93,7 +93,7 @@ func (j *Job) Process(jobs <-chan string, serviceID string) {
 	// go func() {
 	// 	for tsk := range j.Responses {
 	// 		j.WG.Done()
-	// 		j.defineTasksToExecute(tsk.TaskID, tsk.ParentID, tsk.Sequence)
+	// 		j.defineTasksToExecute(tsk.TaskID, tsk.ParentCode, tsk.Sequence)
 	// 	}
 	// }()
 
@@ -104,11 +104,11 @@ func (j *Job) Process(jobs <-chan string, serviceID string) {
 	}
 }
 
-func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
+func (j *Job) defineTasksToExecute(id, parentCode string, sequence int) {
 	//check if sequence is completed
 	sequenceCompleted := true
 	for _, t := range j.Tasks {
-		if t.ParentID == parentID && t.Sequence == sequence && (t.Status == constants.JobStatusProcessing || t.Status == constants.JobStatusCreated) {
+		if t.ParentCode == parentCode && t.Sequence == sequence && (t.Status == constants.JobStatusProcessing || t.Status == constants.JobStatusCreated) {
 			sequenceCompleted = false
 		}
 	}
@@ -118,7 +118,7 @@ func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
 	}
 
 	for i, t := range j.Tasks {
-		if t.ParentID == parentID && t.Sequence == sequence && t.Status == constants.JobStatusCreated {
+		if t.ParentCode == parentCode && t.Sequence == sequence && t.Status == constants.JobStatusCreated {
 			j.Tasks[i].Status = constants.JobStatusProcessing
 			j.Execution <- &j.Tasks[i]
 		}
@@ -127,7 +127,7 @@ func (j *Job) defineTasksToExecute(id, parentID string, sequence int) {
 	if id != "" {
 		//Check if has childs to start executing
 		for i, t := range j.Tasks {
-			if t.ParentID == id && t.Sequence == 0 && t.Status == constants.JobStatusCreated {
+			if t.ParentCode == id && t.Sequence == 0 && t.Status == constants.JobStatusCreated {
 				j.Tasks[i].Status = constants.JobStatusProcessing
 				j.Execution <- &j.Tasks[i]
 			}
@@ -149,7 +149,7 @@ func (j *Job) getParamValue(path string) string {
 		}
 	case paramScopeTask:
 		for _, t := range j.Tasks {
-			if t.Code == param[1] {
+			if t.TaskCode == param[1] {
 				return t.getParamValue(param[2])
 			}
 		}
