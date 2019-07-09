@@ -9,6 +9,7 @@ import (
 
 	"github.com/agile-work/srv-shared/rdb"
 	"github.com/agile-work/srv-shared/service"
+	"github.com/agile-work/srv-shared/token"
 
 	"github.com/agile-work/srv-aux-job/controllers"
 	"github.com/agile-work/srv-shared/constants"
@@ -69,6 +70,16 @@ func main() {
 		fmt.Println(err.Error())
 	}
 
+	payload := make(map[string]interface{})
+	payload["code"] = systemParams[constants.SysParamAPIUsername]
+	payload["language_code"] = systemParams[constants.SysParamDefaultLanguageCode]
+
+	tokenString, err := token.New(payload, constants.Year)
+	if err != nil {
+		fmt.Printf("Error creating token - %s\n", err.Error())
+		return
+	}
+
 	for w := 1; w <= *jobConcurrencyWorkers; w++ {
 		job := &controllers.Job{
 			Instance:     w,
@@ -76,6 +87,7 @@ func main() {
 			Execution:    make(chan *controllers.Task, 100),
 			Responses:    make(chan *controllers.Task, 100),
 			SystemParams: systemParams,
+			Token:        tokenString,
 		}
 		pool = append(pool, job)
 		go job.Process(jobMessages, aux.InstanceCode)

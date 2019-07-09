@@ -1,11 +1,7 @@
 package controllers
 
 import (
-	"bytes"
-	"crypto/tls"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -13,8 +9,6 @@ import (
 	"github.com/agile-work/srv-shared/constants"
 	"github.com/agile-work/srv-shared/sql-builder/builder"
 	"github.com/agile-work/srv-shared/sql-builder/db"
-
-	"github.com/tidwall/gjson"
 )
 
 // Job represents an running instance of the job definition
@@ -46,7 +40,6 @@ func (j *Job) run(serviceID string) {
 	j.Start = time.Now()
 	j.Status = constants.JobStatusProcessing
 	j.ServiceID = serviceID
-	j.Token, _ = j.loadSystemToken()
 
 	db.UpdateStruct(constants.TableCoreJobInstances, j, opt, "start_at", "status", "service_id")
 	fmt.Printf("Service ID: %s | Worker: %02d | JOB Instance ID: %s | Total tasks: %d\n", j.ServiceID, j.Instance, j.ID, len(j.Tasks))
@@ -167,33 +160,4 @@ func (j *Job) parseTaskParams(tsk *Task) {
 		tsk.ExecPayload = strings.ReplaceAll(tsk.ExecPayload, param, value)
 		//TODO: check rollback address and payload for params
 	}
-}
-
-// loadSystemToken get a valid token to execute job
-func (j *Job) loadSystemToken() (string, error) {
-	url := fmt.Sprintf(
-		"%s%s",
-		j.SystemParams[constants.SysParamAPIHost],
-		j.SystemParams[constants.SysParamAPILoginURL],
-	)
-	payload := bytes.NewBuffer([]byte(
-		fmt.Sprintf(
-			`{"email": "%s", "password": "%s"}`,
-			j.SystemParams[constants.SysParamAPILoginEmail],
-			j.SystemParams[constants.SysParamAPILoginPassword],
-		),
-	))
-	// TODO: Retirar quando o certificado estiver ok
-	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	res, err := http.Post(url, "application/json", payload)
-	if err != nil {
-		return "", err
-	}
-	defer res.Body.Close()
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return "", err
-	}
-
-	return gjson.Get(string(body), "data.token").String(), nil
 }
